@@ -12,10 +12,12 @@ from datetime import datetime
 from datetime import timedelta
 import re
 import sys
+import typing
 
 from cryptography.hazmat.primitives import serialization
 import github3
 import jwt
+import requests
 
 
 def generate_jwt(private_key_pem: str, app_id: int) -> str:
@@ -37,6 +39,21 @@ def generate_jwt(private_key_pem: str, app_id: int) -> str:
     }
 
     return jwt.encode(payload, key, algorithm="RS256")
+
+
+def get_installation_id(owner: str, repo: str, headers: typing.Dict[str, str]) -> int:
+    return requests.get(
+        f"https://api.github.com/repos/{owner}/{repo}/installation", headers=headers
+    ).json().get("id")
+
+
+def generate_installation_token(
+    installation_id: int, headers: typing.Dict[str, str]
+) -> int:
+    return requests.post(
+        f"https://api.github.com/app/installations/{installation_id}/access_tokens",
+        headers=headers,
+    ).json().get("token")
 
 
 def main():
@@ -78,37 +95,36 @@ def main():
 
     # Password for cloning a repo is based on the organization / user that
     # has installed the GitHub app.
-    user, repo = keys['path'].split('/', 1)
+    owner, repo = keys['path'].split('/', 1)
 
     # git clone URL might have a '.git' in it. The GitHub apps API doesn't
     # recognize it as part of the repo name. Since we're making API requests,
     # we should strip this too.
     repo = re.sub(r'\.git$', '', repo)
 
-    # Authenticate to GitHub as our App, using the private RSA key & identifier
+    print(f'Generating JWT...')
+    generated_jwt = generate_jwt(private_key_pem=args.app_key_file, app_id=args.app_id)
+    print(generated_jwt)
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {generated_jwt}"
+    }
+
+    print(f'Generating installation token...')
+    installation_id = get_installation_id(owner=owner, repo=repo, headers=headers)
+    installation_token = generate_installation_token(
+        installation_id=installation_id, headers=headers
+    )
+    print(installation_token)
+
+    print(f'username=x-access-token')
+    print(f'password={installation_token}')
+
+    print(f'Logging in...')
     gh = github3.github.GitHub()
+    gh.login(username="x-access-token", password=installation_token)
 
-    app_private_key = args.app_key_file.read()
-    app_identifier = args.app_id
-    gh.login_as_app(app_private_key.encode(), app_identifier)
-
-
-    # An app can have multiple 'installations', where each installation is
-    # a user / org that has granted access to a specific set of repositories.
-    # We assume that the app has been granted access to the private repo being
-    # pulled. The installation's session token can be used as 'password' to do
-    # git operations.
-    #
-    # We try fetch the installation for the given repo, and set session token as
-    # password if the GitHub app is installed for the repo. We output nothing
-    # otherwise, and git will move on to other credentials
-    try:
-        installation = gh.app_installation_for_repository(user, repo)
-        gh.login_as_app_installation(app_private_key.encode(), app_identifier, installation.id)
-        print(f'username=x-access-token')
-        print(f'password={gh.session.auth.token}')
-    except github3.exceptions.NotFoundError:
-        pass
 
 if __name__ == '__main__':
     main()
