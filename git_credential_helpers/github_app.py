@@ -10,6 +10,8 @@ with private repos that have the GitHub app installed.
 import argparse
 from datetime import datetime
 from datetime import timedelta
+import io
+import logging
 import re
 import sys
 import typing
@@ -20,13 +22,15 @@ import jwt
 import requests
 
 
-def generate_jwt(private_key_pem: str, app_id: int) -> str:
+logging.basicConfig(
+    filename='git-credential-helpers.log',
+    encoding='utf-8',
+    level=logging.DEBUG,
+    filemode="w"
+)
 
-    with open(private_key_pem, "rb") as f:
-        key = serialization.load_pem_private_key(
-            f.read(), password=None,
-        )
 
+def generate_jwt(private_key_pem: io.TextIOWrapper, app_id: int) -> str:
     one_minute_ago = datetime.now() - timedelta(seconds=60)
     in_10_minutes = datetime.now() + timedelta(seconds=600)
     payload = {
@@ -37,8 +41,7 @@ def generate_jwt(private_key_pem: str, app_id: int) -> str:
         # GitHub App's identifier
         "iss": app_id
     }
-
-    return jwt.encode(payload, key, algorithm="RS256")
+    return jwt.encode(payload, private_key_pem.read(), algorithm="RS256")
 
 
 def get_installation_id(owner: str, repo: str, headers: typing.Dict[str, str]) -> int:
@@ -80,6 +83,7 @@ def main():
     )
 
     args = argparser.parse_args()
+    logging.info(args.__dict__)
 
     if args.operation != 'get':
         # This isn't a persistent credential helper, so we don't support store or erase
@@ -89,8 +93,8 @@ def main():
     # Documented at https://git-scm.com/docs/git-credential#IOFMT
     keys = {}
     stdin = sys.stdin
-    print("Login information...")
-    print(stdin)
+    logging.info("Login information...")
+    logging.info(stdin)
     for l in stdin:
         parts = l.strip().split('=', 1)
         keys[parts[0]] = parts[1]
@@ -105,26 +109,26 @@ def main():
     # we should strip this too.
     repo = re.sub(r'\.git$', '', _repo)
 
-    print(f'Generating JWT...')
+    logging.info(f'Generating JWT...')
     generated_jwt = generate_jwt(private_key_pem=args.app_key_file, app_id=args.app_id)
-    print(generated_jwt)
+    logging.info(generated_jwt)
 
     headers = {
         "Accept": "application/vnd.github+json",
         "Authorization": f"Bearer {generated_jwt}"
     }
 
-    print(f'Generating installation token...')
+    logging.info(f'Generating installation token...')
     installation_id = get_installation_id(owner=owner, repo=repo, headers=headers)
     installation_token = generate_installation_token(
         installation_id=installation_id, headers=headers
     )
-    print(installation_token)
+    logging.info(installation_token)
 
-    print(f'username=x-access-token')
-    print(f'password={installation_token}')
+    logging.info(f'username=x-access-token')
+    logging.info(f'password={installation_token}')
 
-    print(f'Logging in...')
+    logging.info(f'Logging in...')
     gh = github3.github.GitHub()
     gh.login(username="x-access-token", password=installation_token)
 
