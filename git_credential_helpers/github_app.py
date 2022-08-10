@@ -7,10 +7,37 @@ can provide fine grained, per-repository access control. This helper lets
 git automatically create GitHub app installation tokens for interacting
 with private repos that have the GitHub app installed.
 """
-import github3
-import sys
 import argparse
+from datetime import datetime
+from datetime import timedelta
 import re
+import sys
+
+from cryptography.hazmat.primitives import serialization
+import github3
+import jwt
+
+
+def generate_jwt(private_key_pem: str, app_id: int) -> str:
+
+    with open(private_key_pem, "rb") as f:
+        key = serialization.load_pem_private_key(
+            f.read(), password=None,
+        )
+
+    one_minute_ago = datetime.now() - timedelta(seconds=60)
+    in_10_minutes = datetime.now() + timedelta(seconds=600)
+    payload = {
+        # issued at time, 60 seconds in the past to allow for clock drift
+        "iat": one_minute_ago,
+        # JWT expiration time (10 minute maximum)
+        "exp": in_10_minutes,
+        # GitHub App's identifier
+        "iss": app_id
+    }
+
+    return jwt.encode(payload, key, algorithm="RS256")
+
 
 def main():
     argparser = argparse.ArgumentParser()
