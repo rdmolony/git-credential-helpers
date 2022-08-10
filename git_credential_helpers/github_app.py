@@ -88,19 +88,22 @@ def main():
     # Parse '=' delimited input via stdin
     # Documented at https://git-scm.com/docs/git-credential#IOFMT
     keys = {}
-    for l in sys.stdin:
+    stdin = sys.stdin
+    print("Login information...")
+    print(stdin)
+    for l in stdin:
         parts = l.strip().split('=', 1)
         keys[parts[0]] = parts[1]
 
 
     # Password for cloning a repo is based on the organization / user that
     # has installed the GitHub app.
-    owner, repo = keys['path'].split('/', 1)
+    owner, _repo = keys['path'].split('/', 1)
 
     # git clone URL might have a '.git' in it. The GitHub apps API doesn't
     # recognize it as part of the repo name. Since we're making API requests,
     # we should strip this too.
-    repo = re.sub(r'\.git$', '', repo)
+    repo = re.sub(r'\.git$', '', _repo)
 
     print(f'Generating JWT...')
     generated_jwt = generate_jwt(private_key_pem=args.app_key_file, app_id=args.app_id)
