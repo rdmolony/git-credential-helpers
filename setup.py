@@ -12,7 +12,7 @@ setup(
     long_description_content_type='text/markdown',
     packages=find_packages(),
     platforms='any',
-    install_requires=['github3.py'],
+    install_requires=['cryptography', 'github3.py', 'pyjwt', 'requests'],
     entry_points={
         'console_scripts': [
             'git-credential-github-app = git_credential_helpers.github_app:main'
